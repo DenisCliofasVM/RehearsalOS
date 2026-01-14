@@ -1,0 +1,768 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rehearsal OS — Live Preview (Single File)</title>
+  <style>
+    :root{
+      --bg:#0f1720;
+      --panel:#111a24;
+      --text:#e6edf3;
+      --muted:rgba(230,237,243,.72);
+      --border:rgba(255,255,255,.12);
+      --btn:rgba(255,255,255,.06);
+      --btnHover:rgba(255,255,255,.10);
+      --green: rgba(10,160,110,.28);
+      --greenBorder: rgba(10,160,110,.55);
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: Carlito, Arial, sans-serif; /* Carlito if installed locally, otherwise Arial */
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    .wrap{ display:grid; grid-template-columns: 360px 1fr; min-height:100vh; }
+
+    .panel{ padding:16px; border-right:1px solid var(--border); background:var(--panel); }
+    h1{ margin:0 0 10px; font-size:18px; }
+    .hint{ color:var(--muted); font-size:13px; line-height:1.35; margin-bottom:14px; }
+
+    .group{ border:1px solid var(--border); border-radius:12px; padding:12px; margin-bottom:12px; background: rgba(255,255,255,.04); }
+    .group-title{ font-weight:700; font-size:13px; margin-bottom:10px; color:rgba(230,237,243,.85); }
+    .row{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+
+    button, input{ font: inherit; }
+    button{ border:1px solid rgba(255,255,255,.18); background:var(--btn); color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer; }
+    button:hover{ background:var(--btnHover); }
+    button.primary{ background:var(--green); border-color:var(--greenBorder); }
+    button.primary:hover{ background: rgba(10,160,110,.36); }
+
+    label{ font-size:12px; color:var(--muted); }
+    .field{ display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+    input[type="text"], input[type="number"]{
+      width:100%;
+      padding:9px 10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.25);
+      color: var(--text);
+      outline:none;
+    }
+    input[type="range"]{ width:100%; }
+
+    .preview{ padding:10px; background:#0b1118; }
+    iframe{ width:100%; height: calc(100vh - 20px); border:0; border-radius:14px; background:#000; box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+
+    .small{ font-size:12px; color:rgba(230,237,243,.70); line-height:1.35; }
+
+    .testout{
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.22);
+      color: rgba(230,237,243,.85);
+      font-size: 12px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+    code{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* keep the template invisible */
+    template{ display:none; }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <aside class="panel">
+      <h1>Preview Controls</h1>
+      <div class="hint">
+        This is a <b>single-file</b> live preview. The right side runs the UI inside an iframe.
+        <br><br>
+        ✅ The embedded UI is loaded via <code>iframe.srcdoc</code> to avoid CSP blocks and string-escaping bugs.
+        <br><br>
+        ✅ Startup behavior: the UI starts on the <b>Upload Patient</b> form. Loading appears <b>only</b> after clicking Upload.
+      </div>
+
+      <div class="group">
+        <div class="group-title">State</div>
+        <div class="row">
+          <button id="btnForm">Show Form</button>
+          <button id="btnLoading">Show Loading</button>
+          <button id="btnUploads">Show Uploads</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Progress</div>
+        <div class="field">
+          <label for="rng">Set progress (0–100)</label>
+          <input id="rng" type="range" min="0" max="100" value="0" />
+        </div>
+        <div class="row">
+          <input id="pct" type="number" min="0" max="100" value="0" />
+          <button id="btnSet">Apply</button>
+        </div>
+        <div class="row">
+          <button class="primary" id="btn5min">Start 5 min upload</button>
+          <button id="btn30s">Start 30 sec upload</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Attachment label (mock)</div>
+        <div class="field">
+          <label for="zipName">Pretend zip filename</label>
+          <input id="zipName" type="text" placeholder="patient_123.zip" />
+        </div>
+        <div class="row">
+          <button id="btnAttach">Set attached name</button>
+          <button id="btnClearAttach">Clear</button>
+        </div>
+        <div class="small">Note: this just updates the “Attached: …” text for mockups/screenshots.</div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Self-tests</div>
+        <div class="small">Smoke tests (should not throw errors). Startup must remain on the form.</div>
+        <div id="testout" class="testout">(running…)</div>
+      </div>
+    </aside>
+
+    <main class="preview">
+      <iframe id="frame" title="Rehearsal OS UI" sandbox="allow-scripts allow-forms allow-modals"></iframe>
+    </main>
+  </div>
+
+  <!-- Embedded app HTML lives in a <template> so we avoid fragile JS string building. -->
+  <template id="appTpl">
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rehearsal OS</title>
+  <style>
+    :root{
+      --virta-blue:#0b4f79;
+      --virta-green:#0aa06e;
+      --panel-bg: rgba(210, 210, 210, 0.72);
+      --panel-bg-2: rgba(255, 255, 255, 0.65);
+      --ink:#111;
+      --shadow: 0 18px 55px rgba(0,0,0,.25);
+      --radius: 4px;
+      --bar-fill:#0aa06e;
+      --uploads-rail:#0a3f63;
+      --uploads-surface:#c8d7ef;
+    }
+    *{ box-sizing:border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: Carlito, Arial, sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(1200px 600px at 70% 30%, rgba(140,180,220,.65), rgba(40,60,90,.25)),
+        linear-gradient(0deg, rgba(0,0,0,.18), rgba(0,0,0,.18));
+    }
+
+    .topbar{
+      height:64px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:0 18px;
+      background: rgba(210, 210, 210, 0.68);
+      border-bottom: 1px solid rgba(255,255,255,.35);
+    }
+    .brand{ display:flex; align-items:center; gap:10px; min-width: 220px; }
+    .logoMark{ font-weight:900; letter-spacing:.8px; font-size:22px; display:flex; align-items:baseline; gap:2px; }
+    .logoMark .virta{ color: rgba(0,0,0,.45); }
+    .logoMark .med{ color: var(--virta-blue); }
+    .logoMark .plus{ display:inline-grid; place-items:center; width:18px;height:18px; border-radius:50%; background:#c0392b; color:#fff; font-size:12px; margin-left:4px; transform: translateY(-7px); }
+
+    .user-wrap{ display:flex; align-items:center; gap:10px; }
+    .status-dot{ width:9px;height:9px;border-radius:50%; background:#2bbf4b; box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
+    .user-menu{ position:relative; }
+    .user-button{ display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.85); border-radius:3px; cursor:pointer; font-size:14px; min-width: 170px; justify-content:space-between; }
+    .caret{ border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid rgba(0,0,0,.55); margin-left:8px; }
+    .dropdown{ position:absolute; right:0; top:44px; width: 200px; background: rgba(255,255,255,.95); border:1px solid rgba(0,0,0,.12); border-radius:3px; box-shadow: 0 10px 30px rgba(0,0,0,.18); overflow:hidden; display:none; z-index:20; }
+    .dropdown.open{ display:block; }
+    .dropdown button{ width:100%; text-align:left; padding:10px 12px; border:0; background: transparent; cursor:pointer; font-size:14px; }
+    .dropdown button:hover{ background: rgba(11,79,121,.08); }
+
+    .stage{ min-height: calc(100vh - 64px - 42px); display:flex; align-items:center; justify-content:center; padding: 32px 16px; }
+    .panel{ width:min(980px, 94vw); background: var(--panel-bg); box-shadow: var(--shadow); border-radius: var(--radius); padding: 0; overflow:hidden; }
+
+    .tabs{ display:flex; border-bottom: 1px solid rgba(0,0,0,.1); }
+    .tab{ border:0; padding: 10px 22px; font-weight:700; cursor:pointer; background: rgba(0,0,0,.20); color: rgba(255,255,255,.92); }
+    .tab.active{ background: var(--virta-green); color:#fff; }
+    .tab + .tab{ border-left: 1px solid rgba(255,255,255,.25); }
+
+    .panel-body{ padding: 18px 22px 16px; background: rgba(255,255,255,.12); }
+    .title{ text-align:center; font-size: 52px; line-height:1.05; font-weight:800; margin: 10px 0 12px; text-shadow: 0 2px 0 rgba(255,255,255,.20); }
+    .divider{ height:2px; background: rgba(0,0,0,.28); margin: 14px 0 22px; }
+    .subtitle{ font-size: 24px; color: rgba(0,0,0,.78); text-align:center; margin: 0 0 12px; }
+
+    .composer{ background: var(--panel-bg-2); border: 1px solid rgba(0,0,0,.16); border-radius: 3px; overflow:hidden; }
+    .textarea{ width:100%; min-height: 220px; resize:none; border:0; outline:none; padding: 14px; font-size: 16px; color:#222; background: transparent; }
+    .textarea::placeholder{ color: rgba(0,0,0,.55); font-style: italic; }
+
+    .composer-bar{ display:flex; align-items:center; justify-content:space-between; padding: 8px 10px; border-top: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.35); }
+    .left-tools{ display:flex; align-items:center; gap:10px; }
+    .attach-label{ color: rgba(0,0,0,.55); font-size: 13px; }
+    .icon-btn{ width:34px; height:28px; border: 1px solid rgba(0,0,0,.16); background: rgba(255,255,255,.72); border-radius: 3px; cursor:pointer; display:grid; place-items:center; user-select:none; }
+    .icon-btn:hover{ background: rgba(255,255,255,.90); }
+    .icon-btn:active{ transform: translateY(1px); }
+    .plus::before{ content:"+"; font-size:20px; font-weight:800; color:#111; line-height:1; }
+
+    .mic{ position:relative; }
+    .mic svg{ width:16px;height:16px; display:block; }
+    .mic.recording{ border-color: rgba(190,0,0,.35); background: rgba(255, 210, 210, .85); }
+    .mic.recording::after{ content:""; position:absolute; top:-6px; right:-6px; width:10px;height:10px;border-radius:50%; background:#d10000; box-shadow: 0 0 0 2px rgba(255,255,255,.7); animation: pulse 1.1s ease-in-out infinite; }
+    @keyframes pulse{ 0%,100%{ transform:scale(.9); opacity:.75; } 50%{ transform:scale(1.15); opacity:1; } }
+
+    .right-tools{ display:flex; align-items:center; gap:8px; color: rgba(0,0,0,.65); font-size: 12px; }
+
+    .upload-row{ margin-top: 14px; }
+    .primary{ width:100%; background: var(--virta-green); color:#fff; border:0; border-radius:3px; padding: 12px 16px; font-size: 16px; font-weight:700; cursor:pointer; box-shadow: 0 3px 0 rgba(0,0,0,.18); }
+    .primary:hover{ filter: brightness(1.03); }
+    .primary:active{ transform: translateY(1px); box-shadow: 0 2px 0 rgba(0,0,0,.18); }
+
+    .loading{ display:none; padding: 36px 22px 34px; background: rgba(255,255,255,.10); }
+    .loading.open{ display:block; }
+    .loading-text{ text-align:center; font-size: 22px; color: rgba(0,0,0,.70); margin-top: 36px; margin-bottom: 18px; }
+    .bar{ width: min(520px, 92%); height: 16px; margin: 0 auto; background: rgba(0,0,0,.35); border-radius: 2px; overflow:hidden; border: 1px solid rgba(0,0,0,.20); }
+    .bar > .fill{ height:100%; width:0%; background: var(--bar-fill); transition: width 180ms linear; }
+    .pct{ text-align:center; font-size: 12px; margin-top: 10px; color: rgba(0,0,0,.55); }
+
+    .uploads{ display:none; background: var(--uploads-surface); border: 1px solid rgba(0,0,0,.12); border-radius: 3px; overflow:hidden; }
+    .uploads.open{ display:block; }
+    .uploads-grid{ display:grid; grid-template-columns: 280px 1fr; gap: 0; min-height: 360px; }
+    .rail{ background: var(--uploads-rail); padding: 14px 12px; }
+
+    .patient-btn{ width:100%; display:flex; gap:10px; align-items:center; padding: 10px; margin-bottom: 10px; border:0; cursor:pointer; border-radius: 999px; background: rgba(0,0,0,.18); color: rgba(255,255,255,.92); text-align:left; }
+    .patient-btn:hover{ background: rgba(0,0,0,.24); }
+    .patient-btn.active{ outline: 3px solid rgba(10,160,110,.55); background: rgba(0,0,0,.20); }
+
+    .avatar{ width:46px; height:46px; border-radius:50%; background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.65), rgba(255,255,255,.15)); border: 3px solid rgba(0,0,0,.35); flex:0 0 auto; display:grid; place-items:center; font-weight:800; }
+    .pmeta{ display:flex; flex-direction:column; gap:2px; }
+    .pname{ font-weight:800; font-size:14px; }
+    .psub{ font-weight:700; font-size:12px; opacity:.95; }
+
+    .content{ padding: 16px 16px; }
+    .hrow{ display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .hlabel{ font-size: 20px; font-weight:800; margin-bottom: 8px; color: rgba(0,0,0,.78); }
+
+    .detailsBox{ background: rgba(255,255,255,.72); border: 2px solid rgba(0,0,0,.16); border-radius: 3px; min-height: 250px; padding: 12px; line-height: 1.35; font-size: 15px; }
+
+    .scanWrap{ display:flex; flex-direction:column; }
+    .scanBox{ background: rgba(0,0,0,.82); border-radius: 3px; height: 300px; overflow:hidden; border: 2px solid rgba(0,0,0,.16); position:relative; display:grid; place-items:center; }
+    .scanBox svg{ width:100%; height:100%; display:block; }
+    .scanTag{ position:absolute; top:10px; left:10px; color: rgba(255,255,255,.9); font-weight:900; letter-spacing:.5px; }
+
+    .bottomAction{ padding: 14px 0 6px; }
+    .bottomAction .primary{ width: min(640px, 88%); display:block; margin: 0 auto; }
+
+    .footer{ height:42px; display:flex; align-items:center; justify-content:space-between; padding: 0 18px; background: rgba(11,79,121,.92); color: rgba(255,255,255,.92); font-size: 13px; }
+    .footer a{ color: rgba(255,255,255,.92); text-decoration: underline; }
+
+    .sr-only{ position:absolute; width:1px;height:1px; padding:0;margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap;border:0; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logoMark" aria-label="VirtaMed">
+        <span class="virta">VIRTA</span><span class="med">MED</span><span class="plus">+</span>
+      </div>
+    </div>
+    <div class="user-wrap">
+      <span class="status-dot" aria-hidden="true"></span>
+      <div class="user-menu" id="userMenu">
+        <button class="user-button" id="userButton" type="button" aria-haspopup="true" aria-expanded="false">
+          <span>Dr. John Smith</span>
+          <span class="caret" aria-hidden="true"></span>
+        </button>
+        <div class="dropdown" id="userDropdown" role="menu" aria-label="User menu">
+          <button type="button" role="menuitem">View profile</button>
+          <button type="button" role="menuitem">Log out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="stage">
+    <section class="panel" aria-label="Rehearsal OS">
+      <div class="tabs">
+        <button class="tab active" id="tabUpload" type="button">Upload Patient</button>
+        <button class="tab" id="tabExisting" type="button">View Existing Uploads</button>
+      </div>
+
+      <div class="panel-body">
+        <div class="title">Rehearsal OS™</div>
+        <div class="divider"></div>
+
+        <div class="form" id="formView">
+          <div class="subtitle">Please provide the patient details bellow:</div>
+          <div class="composer">
+            <label class="sr-only" for="patientText">Patient details</label>
+            <textarea id="patientText" class="textarea" placeholder="Type your text here..."></textarea>
+            <div class="composer-bar">
+              <div class="left-tools">
+                <input id="zipInput" type="file" accept=".zip,application/zip" hidden />
+                <button class="icon-btn plus" id="plusBtn" type="button" title="Attach ZIP"></button>
+                <span class="attach-label" id="attachInfo">No file attached</span>
+              </div>
+              <div class="right-tools">
+                <button class="icon-btn mic" id="micBtn" type="button" title="Record voice">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3z"></path>
+                    <path d="M19 11a7 7 0 0 1-14 0"></path>
+                    <path d="M12 18v4"></path>
+                    <path d="M8 22h8"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <div class="upload-row">
+            <button class="primary" id="uploadBtn" type="button">Upload Patient</button>
+          </div>
+        </div>
+
+        <div class="loading" id="loadingView" aria-live="polite">
+          <div class="loading-text">Uploading. Please Wait</div>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="fill" id="progressFill"></div>
+          </div>
+          <div class="pct" id="progressLabel">0%</div>
+        </div>
+
+        <div class="uploads" id="uploadsView">
+          <div class="uploads-grid">
+            <div class="rail" id="patientRail"></div>
+            <div class="content">
+              <div class="hrow">
+                <div>
+                  <div class="hlabel">Patient details bellow:</div>
+                  <div class="detailsBox" id="detailsBox"></div>
+                </div>
+                <div class="scanWrap">
+                  <div class="hlabel">Scan preview:</div>
+                  <div class="scanBox" id="scanBox">
+                    <div class="scanTag">C</div>
+                    <svg viewBox="0 0 420 300" preserveAspectRatio="none" aria-label="Scan preview placeholder">
+                      <defs>
+                        <radialGradient id="g" cx="45%" cy="40%" r="70%">
+                          <stop offset="0%" stop-color="#4b4b4b"/>
+                          <stop offset="55%" stop-color="#2b2b2b"/>
+                          <stop offset="100%" stop-color="#0c0c0c"/>
+                        </radialGradient>
+                      </defs>
+                      <rect x="0" y="0" width="420" height="300" fill="#000"/>
+                      <circle cx="210" cy="155" r="125" fill="url(#g)"/>
+                      <circle cx="210" cy="155" r="92" fill="#1a1a1a" opacity=".75"/>
+                      <circle cx="158" cy="165" r="36" fill="#d7d7d7" opacity=".7"/>
+                      <circle cx="262" cy="165" r="36" fill="#d7d7d7" opacity=".7"/>
+                      <text x="210" y="285" text-anchor="middle" fill="rgba(255,255,255,.65)" font-size="14" font-family="Carlito, Arial">(placeholder scan)</text>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              <div class="bottomAction">
+                <button class="primary" id="loadSimBtn" type="button">Send Patient To Simulator</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div>© 2026 VirtaMed AG | 0.0.1</div>
+    <a href="#" onclick="return false;">About RehearsalOS</a>
+  </footer>
+
+  <script>
+    // User menu
+    var userButton = document.getElementById("userButton");
+    var userDropdown = document.getElementById("userDropdown");
+    userButton.addEventListener("click", function(){
+      var open = userDropdown.classList.toggle("open");
+      userButton.setAttribute("aria-expanded", String(open));
+    });
+    document.addEventListener("click", function(e){
+      var menu = document.getElementById("userMenu");
+      if (!menu.contains(e.target)) {
+        userDropdown.classList.remove("open");
+        userButton.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    // Tabs + Views
+    var tabUpload = document.getElementById("tabUpload");
+    var tabExisting = document.getElementById("tabExisting");
+    var formView = document.getElementById("formView");
+    var loadingView = document.getElementById("loadingView");
+    var uploadsView = document.getElementById("uploadsView");
+
+    function showForm(){
+      stopAnim();
+      loadingView.classList.remove("open");
+      uploadsView.classList.remove("open");
+      formView.style.display = "block";
+      tabUpload.classList.add("active");
+      tabExisting.classList.remove("active");
+    }
+    function showLoading(){
+      formView.style.display = "none";
+      uploadsView.classList.remove("open");
+      loadingView.classList.add("open");
+      tabUpload.classList.add("active");
+      tabExisting.classList.remove("active");
+    }
+    function showExisting(){
+      stopAnim();
+      loadingView.classList.remove("open");
+      formView.style.display = "none";
+      uploadsView.classList.add("open");
+      tabUpload.classList.remove("active");
+      tabExisting.classList.add("active");
+
+      // Default selection when entering Existing Uploads
+      selectPatient("p1");
+    }
+
+    tabUpload.addEventListener("click", showForm);
+    tabExisting.addEventListener("click", showExisting);
+
+    // Attach zip
+    var plusBtn = document.getElementById("plusBtn");
+    var zipInput = document.getElementById("zipInput");
+    var attachInfo = document.getElementById("attachInfo");
+    plusBtn.addEventListener("click", function(){ zipInput.click(); });
+    zipInput.addEventListener("change", function(){
+      var file = zipInput.files && zipInput.files[0];
+      if (!file) return;
+      var isZip = file.name.toLowerCase().endsWith(".zip") || file.type === "application/zip";
+      attachInfo.textContent = isZip ? ("Attached: " + file.name) : "No file attached";
+      if (!isZip) zipInput.value = "";
+    });
+
+    // Mic (mock transcript)
+    var micBtn = document.getElementById("micBtn");
+    var patientText = document.getElementById("patientText");
+    var mediaRecorder = null;
+    var chunks = [];
+    var isRecording = false;
+    var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    var recognizer = null;
+    var liveTranscript = "";
+
+    function appendToTextarea(text){
+      var prefix = patientText.value.trim().length ? "\n\n" : "";
+      patientText.value += prefix + text;
+      patientText.scrollTop = patientText.scrollHeight;
+    }
+
+    function startRecording(){
+      return new Promise(function(resolve){
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          appendToTextarea("[Voice: microphone not supported]");
+          resolve(); return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(function(stream){
+          mediaRecorder = new MediaRecorder(stream);
+          chunks = [];
+          mediaRecorder.ondataavailable = function(e){ if (e.data && e.data.size > 0) chunks.push(e.data); };
+          mediaRecorder.onstop = function(){
+            stream.getTracks().forEach(function(t){ t.stop(); });
+            if (liveTranscript.trim()) {
+              appendToTextarea(liveTranscript.trim());
+            } else {
+              var blob = new Blob(chunks, { type: (chunks[0] && chunks[0].type) ? chunks[0].type : "audio/webm" });
+              var url = URL.createObjectURL(blob);
+              appendToTextarea("[Voice message recorded] (audio link: " + url + ")");
+            }
+            liveTranscript = "";
+            if (recognizer) { try { recognizer.stop(); } catch (_) {} }
+          };
+
+          if (SpeechRecognition) {
+            recognizer = new SpeechRecognition();
+            recognizer.continuous = true;
+            recognizer.interimResults = true;
+            recognizer.lang = "en-US";
+            recognizer.onresult = function(event){
+              var text = "";
+              for (var i = event.resultIndex; i < event.results.length; i++) {
+                text += event.results[i][0].transcript;
+              }
+              liveTranscript = text;
+            };
+            recognizer.onerror = function(){};
+            try { recognizer.start(); } catch (_) {}
+          }
+
+          mediaRecorder.start(250);
+          isRecording = true;
+          micBtn.classList.add("recording");
+          micBtn.title = "Stop recording";
+          resolve();
+        }).catch(function(){
+          appendToTextarea("[Voice: cannot access mic in this preview]");
+          resolve();
+        });
+      });
+    }
+
+    function stopRecording(){
+      if (!mediaRecorder) return;
+      try { mediaRecorder.stop(); } catch (_) {}
+      isRecording = false;
+      micBtn.classList.remove("recording");
+      micBtn.title = "Record voice";
+    }
+
+    micBtn.addEventListener("click", function(){
+      if (!isRecording) startRecording();
+      else stopRecording();
+    });
+
+    // Loading/progress
+    var uploadBtn = document.getElementById("uploadBtn");
+    var progressFill = document.getElementById("progressFill");
+    var progressLabel = document.getElementById("progressLabel");
+    var progressBar = loadingView.querySelector("[role=\"progressbar\"]");
+
+    function setProgress(pct){
+      var clamped = Math.max(0, Math.min(100, Math.round(pct)));
+      progressFill.style.width = clamped + "%";
+      progressLabel.textContent = clamped + "%";
+      progressBar.setAttribute("aria-valuenow", String(clamped));
+    }
+
+    var rafId = null;
+    function stopAnim(){
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+
+    function startFakeUpload(durationMs){
+      if (!durationMs) durationMs = 300000;
+      showLoading();
+      setProgress(0);
+      var start = performance.now();
+      function tick(now){
+        var elapsed = now - start;
+        var ratio = Math.min(elapsed / durationMs, 1);
+        setProgress(ratio * 100);
+        if (ratio < 1) {
+          rafId = requestAnimationFrame(tick);
+        } else {
+          // When upload completes, automatically switch to Existing Uploads
+          showExisting();
+        }
+      }
+      stopAnim();
+      rafId = requestAnimationFrame(tick);
+    }
+
+    uploadBtn.addEventListener("click", function(){ startFakeUpload(300000); });
+
+    // Existing uploads data
+    var PATIENTS = [
+      { id: "p1", initials: "JS", title: "John Smith - Nephrectomy", date: "07/01/2026", details: "The patient presents with persistent left-sided flank pain and intermittent visible blood in the urine over the past several months. Imaging studies demonstrate a severely hydronephrotic and poorly functioning left kidney, likely due to chronic obstruction. Given the progressive loss of renal function, ongoing symptoms, and increased risk of future complications, surgical removal of the affected kidney has been indicated.", scanTag: "C" },
+      { id: "p2", initials: "DB", title: "Diana Black - Myomectomy", date: "12/01/2026", details: "The patient presents with progressively worsening pelvic pain, heavy menstrual bleeding, and pressure-related symptoms affecting daily activities. Imaging reveals multiple uterine fibroids, including a dominant intramural myoma associated with distortion of the uterine cavity. Given the severity of symptoms and the patient's desire for uterine preservation, surgical myomectomy has been indicated to relieve symptoms and restore normal uterine anatomy.", scanTag: "C" },
+      { id: "p3", initials: "GW", title: "Gill Watts - Prostatectomy", date: "17/03/2026", details: "The patient presents with lower urinary tract symptoms, including urinary frequency, nocturia, and reduced urinary flow. Diagnostic evaluation and biopsy confirm clinically significant prostate cancer localized to the prostate gland. Given the disease stage, patient health status, and curative treatment intent, surgical prostatectomy has been indicated.", scanTag: "C" }
+    ];
+
+    var patientRail = document.getElementById("patientRail");
+    var detailsBox = document.getElementById("detailsBox");
+    var scanBox = document.getElementById("scanBox");
+
+    function renderRail(){
+      patientRail.innerHTML = "";
+      for (var i=0;i<PATIENTS.length;i++){
+        (function(p){
+          var btn = document.createElement("button");
+          btn.className = "patient-btn";
+          btn.type = "button";
+          btn.setAttribute("data-id", p.id);
+
+          var av = document.createElement("div");
+          av.className = "avatar";
+          av.textContent = p.initials;
+
+          var meta = document.createElement("div");
+          meta.className = "pmeta";
+
+          var name = document.createElement("div");
+          name.className = "pname";
+          name.textContent = p.title;
+
+          var sub = document.createElement("div");
+          sub.className = "psub";
+          sub.textContent = p.date;
+
+          meta.appendChild(name);
+          meta.appendChild(sub);
+
+          btn.appendChild(av);
+          btn.appendChild(meta);
+          btn.addEventListener("click", function(){ selectPatient(p.id); });
+          patientRail.appendChild(btn);
+        })(PATIENTS[i]);
+      }
+    }
+
+    function selectPatient(id){
+      var buttons = patientRail.querySelectorAll(".patient-btn");
+      for (var j=0;j<buttons.length;j++){
+        buttons[j].classList.toggle("active", buttons[j].getAttribute("data-id") === id);
+      }
+
+      var chosen = null;
+      for (var k=0;k<PATIENTS.length;k++) if (PATIENTS[k].id === id) chosen = PATIENTS[k];
+      if (!chosen) return;
+
+      detailsBox.textContent = chosen.details;
+      var tag = scanBox.querySelector(".scanTag");
+      if (tag) tag.textContent = chosen.scanTag;
+    }
+
+    renderRail();
+    selectPatient("p1");
+
+    document.getElementById("loadSimBtn").addEventListener("click", function(){ /* no-op */ });
+
+    // Previewer hooks (postMessage)
+    window.addEventListener("message", function(event){
+      var msg = event.data;
+      if (!msg || typeof msg !== "object") return;
+
+      if (msg.type === "state") {
+        if (msg.value === "form") showForm();
+        if (msg.value === "loading") showLoading();
+        if (msg.value === "uploads") showExisting();
+      }
+
+      // IMPORTANT: progress updates must NEVER force the loading view.
+      if (msg.type === "progress") {
+        if (loadingView.classList.contains("open")) setProgress(Number(msg.value));
+      }
+
+      if (msg.type === "startUpload") {
+        var d = Number(msg.durationMs);
+        startFakeUpload((isFinite(d) && d > 0) ? d : 300000);
+      }
+
+      if (msg.type === "attachName") {
+        var name = String(msg.value || "").trim();
+        attachInfo.textContent = name ? ("Attached: " + name) : "No file attached";
+      }
+
+      if (msg.type === "selectPatient") {
+        showExisting();
+        selectPatient(String(msg.value || "p1"));
+      }
+    });
+
+    // Explicit startup: always show form.
+    showForm();
+  </script>
+</body>
+</html>
+  </template>
+
+  <script>
+    const frame = document.getElementById('frame');
+    const testout = document.getElementById('testout');
+
+    function logTest(line) {
+      testout.textContent += line + "\n";
+    }
+
+    function loadIframe() {
+      // In this ChatGPT preview environment, navigating iframes to blob:/data: URLs can be blocked by CSP.
+      // Using srcdoc keeps everything self-contained and CSP-friendly.
+      const tpl = document.getElementById('appTpl');
+      frame.srcdoc = tpl.innerHTML.trim();
+    }
+
+    loadIframe();
+
+    function send(payload) {
+      if (!frame.contentWindow) return;
+      frame.contentWindow.postMessage(payload, '*');
+    }
+
+    // Controls
+    document.getElementById('btnForm').addEventListener('click', () => send({ type:'state', value:'form' }));
+    document.getElementById('btnLoading').addEventListener('click', () => send({ type:'state', value:'loading' }));
+    document.getElementById('btnUploads').addEventListener('click', () => send({ type:'state', value:'uploads' }));
+
+    const rng = document.getElementById('rng');
+    const pct = document.getElementById('pct');
+    rng.addEventListener('input', () => pct.value = rng.value);
+    pct.addEventListener('input', () => rng.value = pct.value);
+
+    document.getElementById('btnSet').addEventListener('click', () => send({ type:'progress', value:Number(pct.value) }));
+    document.getElementById('btn5min').addEventListener('click', () => send({ type:'startUpload', durationMs: 300000 }));
+    document.getElementById('btn30s').addEventListener('click', () => send({ type:'startUpload', durationMs: 30000 }));
+
+    const zipName = document.getElementById('zipName');
+    document.getElementById('btnAttach').addEventListener('click', () => send({ type:'attachName', value: zipName.value }));
+    document.getElementById('btnClearAttach').addEventListener('click', () => send({ type:'attachName', value: '' }));
+
+    // ----------------- Smoke tests -----------------
+    function runTests() {
+      testout.textContent = '';
+      logTest('✓ tests started');
+
+      try {
+        // Startup must be form.
+        send({ type: 'state', value: 'form' });
+        logTest('✓ state=form');
+
+        // Setting progress should not force loading.
+        send({ type: 'progress', value: 50 });
+        logTest('✓ progress=50 (should not show loading unless already loading)');
+
+        // Attachment label updates.
+        send({ type: 'attachName', value: 'test_patient.zip' });
+        logTest('✓ attachName set');
+        send({ type: 'attachName', value: '' });
+        logTest('✓ attachName cleared');
+
+        // Existing uploads + select patient.
+        send({ type: 'state', value: 'uploads' });
+        logTest('✓ state=uploads');
+        send({ type: 'selectPatient', value: 'p2' });
+        logTest('✓ selectPatient=p2');
+
+        // Restore form.
+        send({ type: 'state', value: 'form' });
+        logTest('✓ restored state=form');
+
+        logTest('All smoke tests completed (no exceptions).');
+      } catch (e) {
+        logTest('✗ Smoke tests failed: ' + (e && e.message ? e.message : String(e)));
+      }
+    }
+
+    // Some environments do not reliably fire 'load' for srcdoc; run tests after a short delay.
+    setTimeout(runTests, 350);
+  </script>
+</body>
+</html>
