@@ -36,6 +36,7 @@
       border-bottom: 1px solid rgba(255,255,255,.35);
     }
     .brand{ display:flex; align-items:center; gap:10px; }
+	.logo-img{ height: 34px; width: auto; display: block; }
     .logoMark{ font-weight:900; letter-spacing:.8px; font-size:22px; display:flex; align-items:baseline; gap:2px; }
     .logoMark .virta{ color: rgba(0,0,0,.45); }
     .logoMark .med{ color: var(--virta-blue); }
@@ -132,9 +133,13 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="logoMark" aria-label="VirtaMed">
-        <span class="virta">VIRTA</span><span class="med">MED</span><span class="plus">+</span>
-      </div>
+		<div class="brand">
+		  <img
+			src="logo.png"
+			alt="VirtaMed"
+			class="logo-img"
+		  />
+		</div>
     </div>
     <div class="user-wrap">
       <span class="status-dot" aria-hidden="true"></span>
