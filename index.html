@@ -21,22 +21,24 @@
       --topbar-h: 64px;
       --footer-h: 42px;
 
-      /* Adjustable logo size (responsive by default) */
+      /* Adjustable logo size (edit this one value to resize the logo) */
       --logo-h: clamp(24px, 3.4vw, 36px);
     }
 
     *{ box-sizing:border-box; }
 
-    html,body{ height:100%; }
+    html, body{ height:100%; }
 
     body{
       margin:0;
       font-family: Carlito, Arial, sans-serif;
       color:var(--ink);
-      /* Local background image (next to index.html). */
+
+      /* Local background image (next to index.html) */
       background: url("background.jpg") no-repeat center center fixed;
       background-size: cover;
-      /* Because header/footer are fixed, give the document breathing room */
+
+      /* Because header/footer are fixed, keep content from hiding behind them */
       padding-top: var(--topbar-h);
       padding-bottom: var(--footer-h);
     }
@@ -61,18 +63,11 @@
 
     .brand{ display:flex; align-items:center; gap:10px; }
 
-    /* Logo image (adjustable via --logo-h) */
     .logo-img{
       height: var(--logo-h);
       width: auto;
       display: block;
     }
-
-    /* (Optional) fallback text logo if image fails */
-    .logoMark{ font-weight:900; letter-spacing:.8px; font-size:22px; display:flex; align-items:baseline; gap:2px; }
-    .logoMark .virta{ color: rgba(0,0,0,.45); }
-    .logoMark .med{ color: var(--virta-blue); }
-    .logoMark .plus{ display:inline-grid; place-items:center; width:18px;height:18px; border-radius:50%; background:#c0392b; color:#fff; font-size:12px; margin-left:4px; transform: translateY(-7px); }
 
     .user-wrap{ display:flex; align-items:center; gap:10px; }
     .status-dot{ width:9px;height:9px;border-radius:50%; background:#2bbf4b; box-shadow: 0 0 0 2px rgba(255,255,255,.55); }
@@ -199,13 +194,7 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <!-- Replace the text logo with your real logo file (must be next to index.html) -->
       <img src="logo.png" alt="VirtaMed" class="logo-img" />
-      <!-- If you ever want a fallback, uncomment below:
-      <div class="logoMark" aria-label="VirtaMed">
-        <span class="virta">VIRTA</span><span class="med">MED</span><span class="plus">+</span>
-      </div>
-      -->
     </div>
     <div class="user-wrap">
       <span class="status-dot" aria-hidden="true"></span>
@@ -380,9 +369,8 @@
     var liveTranscript = "";
 
     function appendToTextarea(text){
-      var prefix = patientText.value.trim().length ? "
-
-" : "";
+      // IMPORTANT: keep newline characters inside the string literal.
+      var prefix = patientText.value.trim().length ? "\n\n" : "";
       patientText.value += prefix + text;
       patientText.scrollTop = patientText.scrollHeight;
     }
@@ -455,7 +443,7 @@
     var uploadBtn = document.getElementById("uploadBtn");
     var progressFill = document.getElementById("progressFill");
     var progressLabel = document.getElementById("progressLabel");
-    var progressBar = loadingView.querySelector("[role=\"progressbar\"]");
+    var progressBar = loadingView.querySelector('[role="progressbar"]');
 
     function setProgress(pct){
       var clamped = Math.max(0, Math.min(100, Math.round(pct)));
@@ -567,7 +555,13 @@
       assert(!loadingView.classList.contains("open"), "Loading should be hidden at start");
       assert(!uploadsView.classList.contains("open"), "Existing uploads should be hidden at start");
 
-      // Test 2: switch to existing sets default patient
+      // Test 2: header/footer are fixed (important for mobile)
+      var topbarPos = getComputedStyle(document.querySelector('.topbar')).position;
+      var footerPos = getComputedStyle(document.querySelector('.footer')).position;
+      assert(topbarPos === 'fixed', 'Header should be fixed');
+      assert(footerPos === 'fixed', 'Footer should be fixed');
+
+      // Test 3: switch to existing sets default patient
       showExisting();
       var active = patientRail.querySelector(".patient-btn.active");
       assert(active && active.getAttribute("data-id") === "p1", "Default selected patient should be p1");
